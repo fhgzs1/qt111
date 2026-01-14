@@ -12,7 +12,6 @@
 #include <QMessageBox>
 #include "taskmodel.h"
 #include "reminderthread.h"
-#include "dbmanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -36,24 +35,26 @@ private slots:
     void on_btnExport_clicked();     // 导出文件
 
     // 菜单栏事件
-    void on_actionExit_triggered();   // 退出程序（新增）
-    void on_actionAbout_triggered();  // 关于程序（新增）
+    void on_actionExit_triggered();   // 退出程序
+    void on_actionAbout_triggered();  // 关于程序
 
     // 其他槽函数
     void onTaskReminder(const Task &task); // 接收任务提醒
     void onTaskDataChanged();             // 任务数据变化（更新线程任务列表）
-    void onDBError(const QString &errorMsg); // 接收数据库错误
+
+    // 新增槽函数
+    void onSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
+    void onTableDoubleClicked(const QModelIndex &index);
 
 private:
     Ui::MainWindow *ui;
     TaskModel *m_taskModel;
     ReminderThread *m_reminderThread;
-    DBManager *m_dbManager;
 
-    // 初始化UI控件
-    void initUI();
-    // 加载任务（从数据库到Model）
-    void loadTasksFromDB();
+    int m_nextTaskId = 1;  // 任务ID计数器（替代数据库的自增ID）
+
+    // 加载任务（从内存）
+    void loadTasks();
     // 获取选中的任务ID
     int getSelectedTaskId() const;
     // 清空输入表单
@@ -61,6 +62,8 @@ private:
     // 导出功能
     void exportToExcel();
     void exportToPDF();
+    // 添加示例数据
+    void addSampleTasks();
 };
 
 #endif // MAINWINDOW_H

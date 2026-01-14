@@ -1,32 +1,31 @@
-QT       += core gui widgets sql
+QT       += core gui widgets
 CONFIG += c++17
 TARGET = TaskManager
 TEMPLATE = app
 
-# 源文件
+# 源文件（不包含数据库文件）
 SOURCES += main.cpp \
            mainwindow.cpp \
            taskmodel.cpp \
-           reminderthread.cpp \
-           dbmanager.cpp
+           reminderthread.cpp
 
-# 头文件
+# 头文件（不包含数据库头文件）
 HEADERS  += mainwindow.h \
             taskmodel.h \
-            reminderthread.h \
-            dbmanager.h
+            reminderthread.h
 
 # UI文件
 FORMS    += mainwindow.ui
 
 # 中文编码支持
 DEFINES += QT_DEPRECATED_WARNINGS
-QMAKE_CXXFLAGS += -finput-charset=UTF-8
 
-# 如果是 Qt 6，添加以下行
-QT_VERSION = $$[QT_VERSION]
-QT_VERSION = $$split(QT_VERSION, ".")
-QT_MAJOR_VERSION = $$member(QT_VERSION, 0)
-greaterThan(QT_MAJOR_VERSION, 5) {
-    DEFINES += QT6_COMPAT
-}
+# 添加控制台输出（Windows）
+CONFIG += console
+
+# 设置输出目录
+DESTDIR = $$PWD/bin
+OBJECTS_DIR = $$PWD/temp/.obj
+MOC_DIR = $$PWD/temp/.moc
+RCC_DIR = $$PWD/temp/.rcc
+UI_DIR = $$PWD/temp/.ui

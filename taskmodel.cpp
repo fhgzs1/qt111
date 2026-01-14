@@ -1,5 +1,6 @@
 #include "taskmodel.h"
 #include <QColor>
+#include <QDebug>
 
 TaskModel::TaskModel(QObject *parent)
     : QAbstractTableModel(parent)
@@ -38,7 +39,7 @@ QVariant TaskModel::data(const QModelIndex &index, int role) const
         case ColumnCompleted: return task.isCompleted ? "已完成" : "未完成";
         default: return QVariant();
         }
-    case Qt::ForegroundRole:  // 修复：TextColorRole 改为 ForegroundRole
+    case Qt::ForegroundRole:
         // 已完成任务置灰，高优先级任务标红
         if (task.isCompleted) return QColor(Qt::gray);
         if (task.priority == 2) return QColor(Qt::red);
@@ -79,22 +80,38 @@ bool TaskModel::setData(const QModelIndex &index, const QVariant &value, int rol
     bool changed = false;
 
     if (role == Qt::CheckStateRole && index.column() == ColumnCompleted) {
-        task.isCompleted = (value == Qt::Checked);
-        changed = true;
+        bool newCompleted = (value.toInt() == Qt::Checked);
+        if (task.isCompleted != newCompleted) {
+            task.isCompleted = newCompleted;
+            changed = true;
+            qDebug() << "任务完成状态更改：" << task.title << "->" << (task.isCompleted ? "已完成" : "未完成");
+        }
     } else if (role == Qt::EditRole) {
         switch (index.column()) {
         case ColumnTitle:
-            task.title = value.toString();
-            changed = true;
+            if (task.title != value.toString()) {
+                task.title = value.toString();
+                changed = true;
+            }
             break;
         case ColumnDeadline:
-            task.deadline = QDateTime::fromString(value.toString(), "yyyy-MM-dd HH:mm");
-            changed = true;
+        {
+            QDateTime newDeadline = QDateTime::fromString(value.toString(), "yyyy-MM-dd HH:mm");
+            if (task.deadline != newDeadline) {
+                task.deadline = newDeadline;
+                changed = true;
+            }
             break;
+        }
         case ColumnPriority:
-            task.priority = value.toInt();
-            changed = true;
+        {
+            int newPriority = value.toInt();
+            if (task.priority != newPriority) {
+                task.priority = newPriority;
+                changed = true;
+            }
             break;
+        }
         default:
             break;
         }
@@ -111,11 +128,22 @@ bool TaskModel::setData(const QModelIndex &index, const QVariant &value, int rol
 Qt::ItemFlags TaskModel::flags(const QModelIndex &index) const
 {
     Qt::ItemFlags flags = QAbstractTableModel::flags(index);
-    // 完成状态列可勾选，其他列可编辑
-    if (index.column() == ColumnCompleted)
-        flags |= Qt::ItemIsUserCheckable;
-    else
-        flags |= Qt::ItemIsEditable;
+
+    if (index.isValid()) {
+        // 所有列都可选择
+        flags |= Qt::ItemIsSelectable;
+
+        if (index.column() == ColumnCompleted) {
+            // 完成状态列可勾选
+            flags |= Qt::ItemIsUserCheckable;
+            flags |= Qt::ItemIsEnabled;
+        } else {
+            // 其他列可编辑
+            flags |= Qt::ItemIsEditable;
+            flags |= Qt::ItemIsEnabled;
+        }
+    }
+
     return flags;
 }
 
@@ -194,7 +222,7 @@ Task TaskModel::getTaskById(int taskId) const
         if (task.id == taskId)
             return task;
     }
-    return Task{}; // 返回空任务
+    return Task{};
 }
 
 QString TaskModel::priorityToString(int priority) const
