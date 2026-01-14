@@ -1,24 +1,22 @@
-QT       += core gui
+QT += core gui widgets network
 
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+CONFIG += c++11
 
-CONFIG += c++17
+# 可执行文件名称
+TARGET = zhsj
+TEMPLATE = app
 
-# You can make your code fail to compile if it uses deprecated APIs.
-# In order to do so, uncomment the following line.
-#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
+# 源文件列表
+SOURCES += main.cpp\
+           mainwindow.cpp
 
-SOURCES += \
-    main.cpp \
-    mainwindow.cpp
+# 头文件列表
+HEADERS  += mainwindow.h
 
-HEADERS += \
-    mainwindow.h
+# UI文件列表
+FORMS    += mainwindow.ui
 
-FORMS += \
-    mainwindow.ui
-
-# Default rules for deployment.
+# 部署规则（可选）
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
