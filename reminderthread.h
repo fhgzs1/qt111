@@ -1,6 +1,5 @@
 #ifndef REMINDERTHREAD_H
 #define REMINDERTHREAD_H
-
 #include <QThread>
 #include <QList>
 #include <QDateTime>
@@ -25,7 +24,7 @@ protected:
 
 private:
     QList<Task> m_tasks;
-    bool m_isRunning;
+    volatile bool m_isRunning; // 加volatile，确保多线程可见性
     mutable QMutex m_mutex;                  // 线程安全锁
     const int CHECK_INTERVAL = 1000;         // 任务检查间隔（1秒）
     const int REMINDER_ADVANCE = 60;         // 提前提醒时间（60秒）

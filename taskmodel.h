@@ -1,6 +1,5 @@
 #ifndef TASKMODEL_H
 #define TASKMODEL_H
-
 #include <QAbstractTableModel>
 #include <QDateTime>
 #include <QMutex>
@@ -30,7 +29,7 @@ public:
 
     explicit TaskModel(QObject *parent = nullptr);
 
-    // 重写Model核心方法
+    // 重写Model核心方法（移除不必要的互斥锁）
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
@@ -38,13 +37,13 @@ public:
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
 
-    // 任务管理接口
+    // 任务管理接口（仅修改数据时加锁）
     void addTask(const Task &task);          // 添加任务
     void updateTask(const Task &task);       // 更新任务
     void removeTask(int taskId);             // 删除任务
     void toggleTaskCompleted(int taskId);    // 切换任务完成状态
-    void clearTasks();                       // 清空所有任务（新增）
-    QList<Task> getAllTasks() const;         // 获取所有任务
+    void clearTasks();                       // 清空所有任务
+    QList<Task> getAllTasks() const;         // 获取所有任务（返回副本，无需加锁）
     Task getTaskById(int taskId) const;      // 按ID获取任务
 
 signals:
@@ -52,7 +51,7 @@ signals:
 
 private:
     QList<Task> m_tasks;     // 任务列表（内存缓存）
-    mutable QMutex m_mutex;  // 线程安全锁
+    mutable QMutex m_mutex;  // 仅用于修改数据时的线程安全
     // 优先级转文字（低/中/高）
     QString priorityToString(int priority) const;
     // 截止时间格式化（yyyy-MM-dd HH:mm）

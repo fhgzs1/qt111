@@ -1,3 +1,4 @@
+// mainwindow.cpp
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QVBoxLayout>
@@ -18,47 +19,41 @@ MainWindow::MainWindow(QWidget *parent)
     , m_nextTaskId(1)
 {
     ui->setupUi(this);
-
     // 初始化任务Model
     m_taskModel = new TaskModel(this);
     ui->tableView_Tasks->setModel(m_taskModel);
-
     // 设置列宽（优化显示）
     ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnTitle, 200);
     ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnDeadline, 150);
     ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnPriority, 80);
     ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnCompleted, 80);
-
     // 双击编辑，单行选择
     ui->tableView_Tasks->setEditTriggers(QAbstractItemView::DoubleClicked);
     ui->tableView_Tasks->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableView_Tasks->setSelectionMode(QAbstractItemView::SingleSelection);
-
-    // 关键：连接选择变化信号
+    // 连接选择变化信号
     connect(ui->tableView_Tasks->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &MainWindow::onSelectionChanged);
-
-    // 关键：连接双击信号，用于切换完成状态
+    // 连接双击信号，用于切换完成状态
     connect(ui->tableView_Tasks, &QTableView::doubleClicked,
             this, &MainWindow::onTableDoubleClicked);
-
-    // 加载任务（添加示例数据）
+    // 加载示例任务
     loadTasks();
-
     // 初始化提醒线程
     m_reminderThread = new ReminderThread(this);
     connect(m_reminderThread, &ReminderThread::taskReminder, this, &MainWindow::onTaskReminder);
     connect(m_taskModel, &TaskModel::taskDataChanged, this, &MainWindow::onTaskDataChanged);
-
     // 设置初始任务列表
     m_reminderThread->setTasks(m_taskModel->getAllTasks());
-
     // 启动线程
     m_reminderThread->start();
-
     // 初始化输入表单默认值（当前时间+1小时）
     ui->dateTimeEdit_Deadline->setDateTime(QDateTime::currentDateTime().addSecs(3600));
     ui->comboBox_Priority->setCurrentIndex(1); // 默认中等优先级
+
+    // 关键修复：激活窗口，确保显示在前台
+    this->raise(); // 提升窗口层级
+    this->activateWindow(); // 激活窗口
 
     qDebug() << "程序启动完成，内存模式";
     qDebug() << "当前任务数量：" << m_taskModel->rowCount();
@@ -72,90 +67,19 @@ MainWindow::~MainWindow()
         m_reminderThread->wait();
         delete m_reminderThread;
     }
-
     delete m_taskModel;
     delete ui;
 }
 
-// 当选择变化时，自动填充表单
-void MainWindow::onSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected)
-{
-    Q_UNUSED(deselected);
-
-    if (selected.isEmpty()) {
-        // 没有选中任何行，清空表单
-        clearInputForm();
-        return;
-    }
-
-    // 获取选中的行
-    QModelIndex index = selected.indexes().first();
-    if (!index.isValid()) {
-        return;
-    }
-
-    // 获取任务ID
-    int taskId = getSelectedTaskId();
-    if (taskId == -1) {
-        return;
-    }
-
-    // 获取任务信息
-    Task task = m_taskModel->getTaskById(taskId);
-
-    // 填充表单
-    ui->lineEdit_Title->setText(task.title);
-    ui->dateTimeEdit_Deadline->setDateTime(task.deadline);
-    ui->comboBox_Priority->setCurrentIndex(task.priority);
-    ui->textEdit_Description->setText(task.description);
-
-    qDebug() << "选中任务：" << task.title;
-}
-
-// 处理表格双击事件（主要用于切换完成状态）
-void MainWindow::onTableDoubleClicked(const QModelIndex &index)
-{
-    if (!index.isValid()) {
-        return;
-    }
-
-    // 如果是完成状态列，切换完成状态
-    if (index.column() == TaskModel::ColumnCompleted) {
-        int taskId = getSelectedTaskId();
-        if (taskId != -1) {
-            // 获取当前任务
-            Task task = m_taskModel->getTaskById(taskId);
-            task.isCompleted = !task.isCompleted;
-
-            // 更新任务
-            m_taskModel->updateTask(task);
-
-            qDebug() << "切换任务完成状态：" << task.title << "->" << (task.isCompleted ? "已完成" : "未完成");
-
-            QMessageBox::information(this, "提示",
-                                     QString("任务'%1'状态已更新为：%2")
-                                         .arg(task.title)
-                                         .arg(task.isCompleted ? "已完成" : "未完成"));
-        }
-    } else {
-        // 其他列，只是选中任务，表单已自动填充
-        qDebug() << "双击行：" << index.row() << "列：" << index.column();
-    }
-}
-
-// 加载任务（添加示例数据）
 void MainWindow::loadTasks()
 {
     // 清空现有任务
     m_taskModel->clearTasks();
-
-    // 添加一些示例任务
+    // 添加示例任务
     addSampleTasks();
-
     qDebug() << "加载了" << m_taskModel->rowCount() << "个示例任务";
 }
 
-// 添加示例任务
 void MainWindow::addSampleTasks()
 {
     // 示例任务1：即将到期的任务
@@ -167,7 +91,6 @@ void MainWindow::addSampleTasks()
     task1.isCompleted = false;
     task1.description = "编写项目总结报告，包括数据分析部分";
     m_taskModel->addTask(task1);
-
     // 示例任务2：今天要完成的任务
     Task task2;
     task2.id = m_nextTaskId++;
@@ -177,7 +100,6 @@ void MainWindow::addSampleTasks()
     task2.isCompleted = false;
     task2.description = "每周团队例会，讨论项目进展";
     m_taskModel->addTask(task2);
-
     // 示例任务3：明天的任务
     Task task3;
     task3.id = m_nextTaskId++;
@@ -187,7 +109,6 @@ void MainWindow::addSampleTasks()
     task3.isCompleted = false;
     task3.description = "购买打印机墨盒和纸张";
     m_taskModel->addTask(task3);
-
     // 示例任务4：已完成的任务
     Task task4;
     task4.id = m_nextTaskId++;
@@ -197,7 +118,6 @@ void MainWindow::addSampleTasks()
     task4.isCompleted = true;
     task4.description = "提交上周工作总结和本周计划";
     m_taskModel->addTask(task4);
-
     // 示例任务5：下周的任务
     Task task5;
     task5.id = m_nextTaskId++;
@@ -209,7 +129,6 @@ void MainWindow::addSampleTasks()
     m_taskModel->addTask(task5);
 }
 
-// 添加任务
 void MainWindow::on_btnAddTask_clicked()
 {
     // 获取表单输入
@@ -217,7 +136,6 @@ void MainWindow::on_btnAddTask_clicked()
     QDateTime deadline = ui->dateTimeEdit_Deadline->dateTime();
     int priority = ui->comboBox_Priority->currentIndex();
     QString description = ui->textEdit_Description->toPlainText().trimmed();
-
     // 输入校验
     if (title.isEmpty()) {
         QMessageBox::warning(this, "警告", "任务标题不能为空！");
@@ -227,7 +145,6 @@ void MainWindow::on_btnAddTask_clicked()
         QMessageBox::warning(this, "警告", "截止时间不能早于当前时间！");
         return;
     }
-
     // 构造任务对象
     Task task;
     task.id = m_nextTaskId++;
@@ -236,18 +153,14 @@ void MainWindow::on_btnAddTask_clicked()
     task.priority = priority;
     task.isCompleted = false;
     task.description = description;
-
     // 添加到Model
     m_taskModel->addTask(task);
     QMessageBox::information(this, "成功", "任务添加成功！");
-
     qDebug() << "添加新任务 - ID:" << task.id << "标题:" << task.title;
     qDebug() << "当前任务总数:" << m_taskModel->rowCount();
-
     clearInputForm();
 }
 
-// 编辑任务
 void MainWindow::on_btnEditTask_clicked()
 {
     int taskId = getSelectedTaskId();
@@ -255,13 +168,11 @@ void MainWindow::on_btnEditTask_clicked()
         QMessageBox::warning(this, "警告", "请先选中要编辑的任务！");
         return;
     }
-
     // 获取表单输入
     QString title = ui->lineEdit_Title->text().trimmed();
     QDateTime deadline = ui->dateTimeEdit_Deadline->dateTime();
     int priority = ui->comboBox_Priority->currentIndex();
     QString description = ui->textEdit_Description->toPlainText().trimmed();
-
     // 输入校验
     if (title.isEmpty()) {
         QMessageBox::warning(this, "警告", "任务标题不能为空！");
@@ -271,24 +182,19 @@ void MainWindow::on_btnEditTask_clicked()
         QMessageBox::warning(this, "警告", "截止时间不能早于当前时间！");
         return;
     }
-
     // 获取原任务并更新
     Task task = m_taskModel->getTaskById(taskId);
     task.title = title;
     task.deadline = deadline;
     task.priority = priority;
     task.description = description;
-
     // 更新Model
     m_taskModel->updateTask(task);
     QMessageBox::information(this, "成功", "任务编辑成功！");
-
     qDebug() << "编辑任务 - ID:" << task.id << "新标题:" << task.title;
-
     clearInputForm();
 }
 
-// 删除任务
 void MainWindow::on_btnDeleteTask_clicked()
 {
     int taskId = getSelectedTaskId();
@@ -296,36 +202,28 @@ void MainWindow::on_btnDeleteTask_clicked()
         QMessageBox::warning(this, "警告", "请先选中要删除的任务！");
         return;
     }
-
     if (QMessageBox::question(this, "确认", "确定要删除该任务吗？",
                               QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
         return;
     }
-
     // 从Model删除
     m_taskModel->removeTask(taskId);
     QMessageBox::information(this, "成功", "任务删除成功！");
-
     qDebug() << "删除任务 - ID:" << taskId;
     qDebug() << "剩余任务数:" << m_taskModel->rowCount();
-
     clearInputForm();
 }
 
-// 刷新任务列表
 void MainWindow::on_btnRefresh_clicked()
 {
     // 清空并重新添加示例数据
     m_taskModel->clearTasks();
     m_nextTaskId = 1; // 重置ID计数器
     addSampleTasks();
-
     QMessageBox::information(this, "提示", "任务列表已刷新！");
-
     qDebug() << "刷新任务列表，当前任务数:" << m_taskModel->rowCount();
 }
 
-// 显示统计信息
 void MainWindow::on_btnStats_clicked()
 {
     QList<Task> allTasks = m_taskModel->getAllTasks();
@@ -333,18 +231,15 @@ void MainWindow::on_btnStats_clicked()
     int completed = 0;
     int highPriority = 0;
     int upcoming = 0;
-
     QDateTime now = QDateTime::currentDateTime();
     for (const auto &task : allTasks) {
         if (task.isCompleted) completed++;
         if (task.priority == 2) highPriority++;
         if (!task.isCompleted && task.deadline > now) upcoming++;
     }
-
-    // 计算完成率（避免除以0）
+    // 计算完成率
     QString completionRate = (total > 0) ?
                                  QString::number((completed * 100.0) / total, 'f', 1) : "0.0";
-
     // 显示统计结果
     QString statsText = QString(
                             "任务统计\n"
@@ -358,79 +253,65 @@ void MainWindow::on_btnStats_clicked()
                             .arg(completionRate)
                             .arg(highPriority)
                             .arg(upcoming);
-
     QMessageBox::information(this, "任务统计", statsText);
-
     qDebug() << "统计信息 - 总数:" << total << "已完成:" << completed;
 }
 
-// 导出文件
 void MainWindow::on_btnExport_clicked()
 {
     QMenu menu(this);
-    QAction *excelAction = menu.addAction("导出为CSV");
-    QAction *pdfAction = menu.addAction("导出为文本");
-
+    QAction *csvAction = menu.addAction("导出为CSV");
+    QAction *textAction = menu.addAction("导出为文本");
     QAction *selected = menu.exec(QCursor::pos());
-    if (selected == excelAction) {
+    if (selected == csvAction) {
         exportToExcel();
-    } else if (selected == pdfAction) {
-        exportToPDF();
+    } else if (selected == textAction) {
+        exportToText();
     }
 }
 
-// 导出为CSV
 void MainWindow::exportToExcel()
 {
     QString fileName = QFileDialog::getSaveFileName(this, "导出CSV",
-                                                    QDir::homePath() + "/任务统计.csv",
+                                                    QDir::homePath() + "/任务列表.csv",
                                                     "CSV文件 (*.csv)");
     if (fileName.isEmpty()) return;
-
     QFile file(fileName);
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream stream(&file);
-
         // 写入表头
         stream << "ID,标题,截止时间,优先级,完成状态,描述\n";
-
         // 写入数据
         QList<Task> tasks = m_taskModel->getAllTasks();
         for (const auto &task : tasks) {
             stream << task.id << ","
-                   << task.title << ","
+                   << "\"" << task.title << "\","
                    << task.deadline.toString("yyyy-MM-dd HH:mm") << ","
                    << task.priority << ","
                    << (task.isCompleted ? "已完成" : "未完成") << ","
-                   << task.description << "\n";
+                   << "\"" << task.description << "\"\n";
         }
-
         file.close();
         QMessageBox::information(this, "成功", "数据已导出到：" + fileName);
-
         qDebug() << "导出" << tasks.size() << "个任务到:" << fileName;
     } else {
         QMessageBox::warning(this, "错误", "无法创建文件：" + fileName);
     }
 }
 
-// 导出为文本
-void MainWindow::exportToPDF()
+void MainWindow::exportToText()
 {
     QString fileName = QFileDialog::getSaveFileName(this, "导出文本",
-                                                    QDir::homePath() + "/任务统计.txt",
+                                                    QDir::homePath() + "/任务列表.txt",
                                                     "文本文件 (*.txt)");
     if (fileName.isEmpty()) return;
-
     QFile file(fileName);
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream stream(&file);
-
         // 写入标题
-        stream << "任务统计报表\n";
+        stream << "任务列表报表\n";
         stream << "生成时间：" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm") << "\n";
         stream << "=================================\n\n";
-
         // 写入任务数据
         QList<Task> tasks = m_taskModel->getAllTasks();
         for (const auto &task : tasks) {
@@ -444,51 +325,94 @@ void MainWindow::exportToPDF()
             }
             stream << "---------------------------------\n";
         }
-
         file.close();
         QMessageBox::information(this, "成功", "数据已导出到：" + fileName);
-
         qDebug() << "导出文本报告到:" << fileName;
     } else {
         QMessageBox::warning(this, "错误", "无法创建文件：" + fileName);
     }
 }
 
-// 接收任务提醒
 void MainWindow::onTaskReminder(const Task &task)
 {
     qDebug() << "任务提醒 - ID:" << task.id << "标题:" << task.title;
-
     QMessageBox::information(this, "任务提醒",
                              QString("任务即将到期！\n标题：%1\n截止时间：%2")
                                  .arg(task.title)
                                  .arg(task.deadline.toString("yyyy-MM-dd HH:mm")));
 }
 
-// 任务数据变化（更新线程任务列表）
 void MainWindow::onTaskDataChanged()
 {
     qDebug() << "任务数据变化，更新提醒线程...";
     m_reminderThread->setTasks(m_taskModel->getAllTasks());
 }
 
-// 获取选中的任务ID
+void MainWindow::onSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected)
+{
+    Q_UNUSED(deselected);
+    if (selected.isEmpty()) {
+        // 没有选中任何行，清空表单
+        clearInputForm();
+        return;
+    }
+    // 获取选中的行
+    QModelIndex index = selected.indexes().first();
+    if (!index.isValid()) {
+        return;
+    }
+    // 获取任务ID
+    int taskId = getSelectedTaskId();
+    if (taskId == -1) {
+        return;
+    }
+    // 获取任务信息
+    Task task = m_taskModel->getTaskById(taskId);
+    // 填充表单
+    ui->lineEdit_Title->setText(task.title);
+    ui->dateTimeEdit_Deadline->setDateTime(task.deadline);
+    ui->comboBox_Priority->setCurrentIndex(task.priority);
+    ui->textEdit_Description->setText(task.description);
+    qDebug() << "选中任务：" << task.title;
+}
+
+void MainWindow::onTableDoubleClicked(const QModelIndex &index)
+{
+    if (!index.isValid()) {
+        return;
+    }
+    // 如果是完成状态列，切换完成状态
+    if (index.column() == TaskModel::ColumnCompleted) {
+        int taskId = getSelectedTaskId();
+        if (taskId != -1) {
+            // 切换完成状态
+            m_taskModel->toggleTaskCompleted(taskId);
+            // 获取更新后的任务
+            Task task = m_taskModel->getTaskById(taskId);
+            qDebug() << "切换任务完成状态：" << task.title << "->" << (task.isCompleted ? "已完成" : "未完成");
+            QMessageBox::information(this, "提示",
+                                     QString("任务'%1'状态已更新为：%2")
+                                         .arg(task.title)
+                                         .arg(task.isCompleted ? "已完成" : "未完成"));
+        }
+    } else {
+        // 其他列，只是选中任务，表单已自动填充
+        qDebug() << "双击行：" << index.row() << "列：" << index.column();
+    }
+}
+
 int MainWindow::getSelectedTaskId() const
 {
     QModelIndexList selectedRows = ui->tableView_Tasks->selectionModel()->selectedRows();
     if (selectedRows.isEmpty()) return -1;
-
     QModelIndex index = selectedRows.first();
     QList<Task> tasks = m_taskModel->getAllTasks();
     if (index.row() >= tasks.size()) return -1;
-
     int taskId = tasks[index.row()].id;
     qDebug() << "选中任务ID:" << taskId;
-
     return taskId;
 }
 
-// 清空输入表单
 void MainWindow::clearInputForm()
 {
     ui->lineEdit_Title->clear();
@@ -498,13 +422,11 @@ void MainWindow::clearInputForm()
     ui->tableView_Tasks->clearSelection();
 }
 
-// 退出程序
 void MainWindow::on_actionExit_triggered()
 {
     QApplication::quit();
 }
 
-// 显示关于信息
 void MainWindow::on_actionAbout_triggered()
 {
     QMessageBox::about(this, "关于",

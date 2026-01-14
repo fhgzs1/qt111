@@ -1,15 +1,16 @@
+# zhsj.pro
 QT       += core gui widgets
 CONFIG += c++17
 TARGET = TaskManager
 TEMPLATE = app
 
-# 源文件（不包含数据库文件）
+# 源文件
 SOURCES += main.cpp \
            mainwindow.cpp \
            taskmodel.cpp \
            reminderthread.cpp
 
-# 头文件（不包含数据库头文件）
+# 头文件
 HEADERS  += mainwindow.h \
             taskmodel.h \
             reminderthread.h
