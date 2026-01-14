@@ -20,6 +20,8 @@ void FileTransferThread::run()
     // 先发送文件大小和文件名
     QByteArray header;
     QDataStream headerStream(&header, QIODevice::WriteOnly);
+    // 适配Qt 6：使用当前Qt版本的DataStream版本（无需固定Qt_5_15）
+    headerStream.setVersion(QDataStream::Qt_DefaultCompiledVersion);
     headerStream << fileSize << QFileInfo(m_filePath).fileName();
     m_socket->write(header);
     m_socket->flush();
@@ -151,13 +153,16 @@ void MainWindow::readUdpDatagram()
     }
 }
 
-// 选择设备
+// 选择设备（核心修改：QRegExp → QRegularExpression）
 void MainWindow::on_listWidget_devices_itemClicked(QListWidgetItem *item)
 {
     QString text = item->text();
-    QRegExp ipRegex("\\d+\\.\\d+\\.\\d+\\.\\d+");
-    if (ipRegex.indexIn(text) != -1) {
-        m_selectedDeviceIp = ipRegex.cap(0);
+    // 替换QRegExp为QRegularExpression
+    QRegularExpression ipRegex("\\d+\\.\\d+\\.\\d+\\.\\d+");
+    // 替换indexIn为match，cap(0)为captured(0)
+    QRegularExpressionMatch match = ipRegex.match(text);
+    if (match.hasMatch()) {
+        m_selectedDeviceIp = match.captured(0);
         ui->pushButton_sendFile->setEnabled(true);
     }
 }
@@ -248,11 +253,12 @@ void MainWindow::newClientConnected()
 void MainWindow::readClientData()
 {
     QDataStream in(m_clientSocket);
-    in.setVersion(QDataStream::Qt_5_15);
+    // 适配Qt 6：使用默认编译版本（移除Qt_5_15硬编码）
+    in.setVersion(QDataStream::Qt_DefaultCompiledVersion);
 
     // 第一步：读取文件头（文件大小+文件名）
     if (m_fileSize == 0) {
-        if (m_clientSocket->bytesAvailable() < (int)sizeof(qint64) + (int)sizeof(QString)) {
+        if (m_clientSocket->bytesAvailable() < (qint64)(sizeof(qint64) + sizeof(QString))) {
             return;
         }
         in >> m_fileSize >> m_selectedFilePath;
