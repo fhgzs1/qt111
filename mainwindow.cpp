@@ -1,299 +1,402 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFormLayout>
+#include <QMessageBox>
+#include <QDateTime>
+#include <QFileDialog>
+#include <QTextStream>
+#include <QMenu>
+#include <QCursor>
 
-// 文件传输线程实现
-FileTransferThread::FileTransferThread(QTcpSocket *socket, const QString &filePath, QObject *parent)
-    : QThread(parent), m_socket(socket), m_filePath(filePath)
-{}
-
-void FileTransferThread::run()
-{
-    QFile file(m_filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        emit transferFinished(false);
-        return;
-    }
-
-    qint64 fileSize = file.size();
-    qint64 sentSize = 0;
-
-    // 先发送文件大小和文件名
-    QByteArray header;
-    QDataStream headerStream(&header, QIODevice::WriteOnly);
-    // 适配Qt 6：使用当前Qt版本的DataStream版本（无需固定Qt_5_15）
-    headerStream.setVersion(QDataStream::Qt_DefaultCompiledVersion);
-    headerStream << fileSize << QFileInfo(m_filePath).fileName();
-    m_socket->write(header);
-    m_socket->flush();
-
-    // 分块发送文件内容
-    const qint64 blockSize = 4096;
-    char buffer[blockSize];
-    while (sentSize < fileSize) {
-        qint64 readSize = file.read(buffer, qMin(blockSize, fileSize - sentSize));
-        if (readSize <= 0) break;
-
-        qint64 writeSize = m_socket->write(buffer, readSize);
-        if (writeSize <= 0) break;
-
-        sentSize += writeSize;
-        emit progressChanged((int)((sentSize * 100) / fileSize));
-        m_socket->flush();
-    }
-
-    file.close();
-    emit transferFinished(sentSize == fileSize);
-}
-
-// 主窗口实现
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , m_tcpServer(new QTcpServer(this))
-    , m_clientSocket(nullptr)
-    , m_udpSocket(new QUdpSocket(this))
-    , m_receiveFile(nullptr)
-    , m_fileSize(0)
-    , m_receivedSize(0)
-    , m_transferThread(nullptr)
 {
     ui->setupUi(this);
-    initUI();
-    initNetwork();
+
+    // 初始化单例数据库
+    m_dbManager = DBManager::getInstance(this);
+    if (!m_dbManager->initDB()) {
+        QMessageBox::critical(this, "错误", "数据库初始化失败，程序将退出！");
+        close();
+        return;
+    }
+
+    // 初始化任务Model
+    m_taskModel = new TaskModel(this);
+    ui->tableView_Tasks->setModel(m_taskModel);
+    // 设置列宽（优化显示）
+    ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnTitle, 200);
+    ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnDeadline, 150);
+    ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnPriority, 80);
+    ui->tableView_Tasks->setColumnWidth(TaskModel::ColumnCompleted, 80);
+    // 双击编辑，单行选择
+    ui->tableView_Tasks->setEditTriggers(QAbstractItemView::DoubleClicked);
+    ui->tableView_Tasks->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tableView_Tasks->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    // 先加载任务
+    loadTasksFromDB();
+
+    // 初始化提醒线程
+    m_reminderThread = new ReminderThread(this);
+    connect(m_reminderThread, &ReminderThread::taskReminder, this, &MainWindow::onTaskReminder);
+    connect(m_taskModel, &TaskModel::taskDataChanged, this, &MainWindow::onTaskDataChanged);
+
+    // 设置初始任务列表
+    m_reminderThread->setTasks(m_taskModel->getAllTasks());
+
+    // 启动线程
+    m_reminderThread->start();
+
+    // 连接数据库错误信号
+    connect(m_dbManager, &DBManager::dbError, this, &MainWindow::onDBError);
+
+    // 初始化输入表单默认值（当前时间+1小时）
+    ui->dateTimeEdit_Deadline->setDateTime(QDateTime::currentDateTime().addSecs(3600));
+    ui->comboBox_Priority->setCurrentIndex(1); // 默认中等优先级
+
+    // 连接导出按钮
+    connect(ui->btnExport, &QPushButton::clicked, this, &MainWindow::on_btnExport_clicked);
+
+    // 注意：菜单栏的 action 已经在 ui 文件中通过名称自动连接了
+    // 不需要手动 connect，Qt 的自动连接机制会自动连接名为 on_actionName_triggered 的槽函数
 }
 
 MainWindow::~MainWindow()
 {
     // 安全停止线程
-    if (m_transferThread && m_transferThread->isRunning()) {
-        m_transferThread->quit();
-        m_transferThread->wait();
-    }
-    // 清理文件对象
-    if (m_receiveFile) {
-        m_receiveFile->close();
-        delete m_receiveFile;
-    }
+    m_reminderThread->stopThread();
+    m_reminderThread->wait();
+    // 释放资源
+    delete m_reminderThread;
+    delete m_taskModel;
     delete ui;
 }
 
-void MainWindow::initUI()
+// 添加任务
+void MainWindow::on_btnAddTask_clicked()
 {
-    ui->progressBar->setRange(0, 100);
-    ui->progressBar->setValue(0);
-}
+    // 获取表单输入
+    QString title = ui->lineEdit_Title->text().trimmed();
+    QDateTime deadline = ui->dateTimeEdit_Deadline->dateTime();
+    int priority = ui->comboBox_Priority->currentIndex();
+    QString description = ui->textEdit_Description->toPlainText().trimmed();
 
-void MainWindow::initNetwork()
-{
-    // 启动TCP服务器（监听端口8888）
-    if (!m_tcpServer->listen(QHostAddress::Any, 8888)) {
-        QMessageBox::warning(this, "警告", "TCP服务器启动失败：" + m_tcpServer->errorString());
-    } else {
-        connect(m_tcpServer, &QTcpServer::newConnection, this, &MainWindow::newClientConnected);
+    // 输入校验
+    if (title.isEmpty()) {
+        QMessageBox::warning(this, "警告", "任务标题不能为空！");
+        return;
     }
-
-    // 初始化UDP（设备发现，端口9999）
-    m_udpSocket->bind(QHostAddress::Any, 9999, QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
-    connect(m_udpSocket, &QUdpSocket::readyRead, this, &MainWindow::readUdpDatagram);
-
-    // 自动发现局域网设备
-    discoverDevices();
-}
-
-// 发现局域网设备
-void MainWindow::discoverDevices()
-{
-    ui->listWidget_devices->clear();
-
-    // 广播设备发现请求
-    QByteArray discoverMsg = "LAN_FILE_TRANSFER_DISCOVER";
-    m_udpSocket->writeDatagram(discoverMsg, QHostAddress::Broadcast, 9999);
-
-    // 获取本机IP并添加到设备列表
-    foreach (const QNetworkInterface &interface, QNetworkInterface::allInterfaces()) {
-        if (interface.flags() & QNetworkInterface::IsUp && !(interface.flags() & QNetworkInterface::IsLoopBack)) {
-            foreach (const QNetworkAddressEntry &entry, interface.addressEntries()) {
-                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
-                    QString ip = entry.ip().toString();
-                    ui->listWidget_devices->addItem(new QListWidgetItem(QString("本机 (%1)").arg(ip), ui->listWidget_devices));
-                }
-            }
-        }
-    }
-}
-
-// 读取UDP数据报（设备响应）
-void MainWindow::readUdpDatagram()
-{
-    while (m_udpSocket->hasPendingDatagrams()) {
-        QByteArray datagram;
-        datagram.resize(m_udpSocket->pendingDatagramSize());
-        QHostAddress senderAddr;
-        quint16 senderPort;
-
-        m_udpSocket->readDatagram(datagram.data(), datagram.size(), &senderAddr, &senderPort);
-
-        if (datagram == "LAN_FILE_TRANSFER_DISCOVER") {
-            // 响应设备发现请求
-            m_udpSocket->writeDatagram("LAN_FILE_TRANSFER_RESPONSE", senderAddr, 9999);
-        } else if (datagram == "LAN_FILE_TRANSFER_RESPONSE") {
-            // 收到其他设备响应，添加到列表
-            QString deviceIp = senderAddr.toString();
-            bool exists = false;
-            for (int i = 0; i < ui->listWidget_devices->count(); ++i) {
-                if (ui->listWidget_devices->item(i)->text().contains(deviceIp)) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) {
-                ui->listWidget_devices->addItem(new QListWidgetItem(QString("设备 (%1)").arg(deviceIp), ui->listWidget_devices));
-            }
-        }
-    }
-}
-
-// 选择设备（核心修改：QRegExp → QRegularExpression）
-void MainWindow::on_listWidget_devices_itemClicked(QListWidgetItem *item)
-{
-    QString text = item->text();
-    // 替换QRegExp为QRegularExpression
-    QRegularExpression ipRegex("\\d+\\.\\d+\\.\\d+\\.\\d+");
-    // 替换indexIn为match，cap(0)为captured(0)
-    QRegularExpressionMatch match = ipRegex.match(text);
-    if (match.hasMatch()) {
-        m_selectedDeviceIp = match.captured(0);
-        ui->pushButton_sendFile->setEnabled(true);
-    }
-}
-
-// 选择文件
-void MainWindow::on_pushButton_selectFile_clicked()
-{
-    QString filePath = QFileDialog::getOpenFileName(this, "选择要发送的文件", QDir::homePath());
-    if (!filePath.isEmpty()) {
-        m_selectedFilePath = filePath;
-        ui->label_selectedFile->setText(QFileInfo(filePath).fileName());
-    }
-}
-
-// 发送文件
-void MainWindow::on_pushButton_sendFile_clicked()
-{
-    if (m_selectedDeviceIp.isEmpty() || m_selectedFilePath.isEmpty()) {
-        QMessageBox::warning(this, "警告", "请先选择设备和文件！");
+    if (deadline < QDateTime::currentDateTime()) {
+        QMessageBox::warning(this, "警告", "截止时间不能早于当前时间！");
         return;
     }
 
-    // 创建TCP客户端连接目标设备
-    QTcpSocket *sendSocket = new QTcpSocket(this);
-    sendSocket->connectToHost(QHostAddress(m_selectedDeviceIp), 8888);
+    // 构造任务对象
+    Task task;
+    task.id = m_dbManager->getNextTaskId();
+    task.title = title;
+    task.deadline = deadline;
+    task.priority = priority;
+    task.isCompleted = false;
+    task.description = description;
 
-    if (!sendSocket->waitForConnected(3000)) {
-        QMessageBox::warning(this, "警告", "连接设备失败：" + sendSocket->errorString());
-        sendSocket->deleteLater();
+    // 添加到数据库和Model
+    if (m_dbManager->addTask(task)) {
+        m_taskModel->addTask(task);
+        QMessageBox::information(this, "成功", "任务添加成功！");
+        clearInputForm();
+    }
+}
+
+// 编辑任务
+void MainWindow::on_btnEditTask_clicked()
+{
+    int taskId = getSelectedTaskId();
+    if (taskId == -1) {
+        QMessageBox::warning(this, "警告", "请先选中要编辑的任务！");
         return;
     }
 
-    // 启动文件传输线程
-    m_transferThread = new FileTransferThread(sendSocket, m_selectedFilePath, this);
-    connect(m_transferThread, &FileTransferThread::progressChanged, this, &MainWindow::updateProgress);
-    connect(m_transferThread, &FileTransferThread::transferFinished, this, &MainWindow::transferDone);
-    connect(m_transferThread, &FileTransferThread::finished, m_transferThread, &QObject::deleteLater);
-    connect(m_transferThread, &FileTransferThread::finished, sendSocket, &QObject::deleteLater);
-    m_transferThread->start();
+    // 获取表单输入
+    QString title = ui->lineEdit_Title->text().trimmed();
+    QDateTime deadline = ui->dateTimeEdit_Deadline->dateTime();
+    int priority = ui->comboBox_Priority->currentIndex();
+    QString description = ui->textEdit_Description->toPlainText().trimmed();
 
-    ui->pushButton_sendFile->setEnabled(false);
-    ui->progressBar->setValue(0);
+    // 输入校验
+    if (title.isEmpty()) {
+        QMessageBox::warning(this, "警告", "任务标题不能为空！");
+        return;
+    }
+    if (deadline < QDateTime::currentDateTime()) {
+        QMessageBox::warning(this, "警告", "截止时间不能早于当前时间！");
+        return;
+    }
+
+    // 构造更新后的任务
+    Task task = m_taskModel->getTaskById(taskId);
+    task.title = title;
+    task.deadline = deadline;
+    task.priority = priority;
+    task.description = description;
+
+    // 更新数据库和Model
+    if (m_dbManager->updateTask(task)) {
+        m_taskModel->updateTask(task);
+        QMessageBox::information(this, "成功", "任务编辑成功！");
+        clearInputForm();
+    }
 }
 
-// 更新传输进度
-void MainWindow::updateProgress(int value)
+// 删除任务
+void MainWindow::on_btnDeleteTask_clicked()
 {
-    ui->progressBar->setValue(value);
+    int taskId = getSelectedTaskId();
+    if (taskId == -1) {
+        QMessageBox::warning(this, "警告", "请先选中要删除的任务！");
+        return;
+    }
+
+    if (QMessageBox::question(this, "确认", "确定要删除该任务吗？",
+                              QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+        return;
+    }
+
+    // 从数据库和Model删除
+    if (m_dbManager->deleteTask(taskId)) {
+        m_taskModel->removeTask(taskId);
+        QMessageBox::information(this, "成功", "任务删除成功！");
+        clearInputForm();
+    }
 }
 
-// 传输完成
-void MainWindow::transferDone(bool success)
+// 刷新任务列表
+void MainWindow::on_btnRefresh_clicked()
 {
-    if (success) {
-        QMessageBox::information(this, "提示", "文件发送成功！");
-        // 将发送的文件添加到共享列表
-        ui->listWidget_sharedFiles->addItem(QFileInfo(m_selectedFilePath).fileName());
+    // 修复：直接调用 loadTasksFromDB()，它内部会调用 clearTasks()
+    loadTasksFromDB();
+    QMessageBox::information(this, "提示", "任务列表已刷新！");
+}
+
+// 显示统计信息
+void MainWindow::on_btnStats_clicked()
+{
+    QList<Task> allTasks = m_taskModel->getAllTasks();
+    int total = allTasks.size();
+    int completed = 0;
+    int highPriority = 0;
+    int upcoming = 0;
+
+    QDateTime now = QDateTime::currentDateTime();
+    for (const auto &task : allTasks) {
+        if (task.isCompleted) completed++;
+        if (task.priority == 2) highPriority++;
+        if (!task.isCompleted && task.deadline > now) upcoming++;
+    }
+
+    // 计算完成率（避免除以0）
+    QString completionRate = (total > 0) ?
+                                 QString::number((completed * 100.0) / total, 'f', 1) : "0.0";
+
+    // 显示统计结果
+    QString statsText = QString(
+                            "任务统计\n"
+                            "----------------\n"
+                            "总任务数：%1\n"
+                            "已完成：%2（%3%）\n"
+                            "高优先级：%4\n"
+                            "待完成（未到期）：%5"
+                            ).arg(total)
+                            .arg(completed)
+                            .arg(completionRate)
+                            .arg(highPriority)
+                            .arg(upcoming);
+
+    QMessageBox::information(this, "任务统计", statsText);
+}
+
+// 导出文件
+void MainWindow::on_btnExport_clicked()
+{
+    QMenu menu(this);
+    QAction *excelAction = menu.addAction("导出为Excel");
+    QAction *pdfAction = menu.addAction("导出为PDF");
+
+    QAction *selected = menu.exec(QCursor::pos());
+    if (selected == excelAction) {
+        exportToExcel();
+    } else if (selected == pdfAction) {
+        exportToPDF();
+    }
+}
+
+// 导出为Excel
+void MainWindow::exportToExcel()
+{
+    QString fileName = QFileDialog::getSaveFileName(this, "导出Excel",
+                                                    QDir::homePath() + "/任务统计.xlsx",
+                                                    "Excel文件 (*.xlsx)");
+    if (fileName.isEmpty()) return;
+
+    // 简单实现：导出为CSV格式
+    QFile file(fileName);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&file);
+// 简化编码设置
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        stream.setEncoding(QStringConverter::Utf8);
+#else
+        stream.setCodec("UTF-8");
+#endif
+
+        // 写入表头
+        stream << "ID,标题,截止时间,优先级,完成状态,描述\n";
+
+        // 写入数据
+        QList<Task> tasks = m_taskModel->getAllTasks();
+        for (const auto &task : tasks) {
+            stream << task.id << ","
+                   << task.title << ","
+                   << task.deadline.toString("yyyy-MM-dd HH:mm") << ","
+                   << task.priority << ","
+                   << (task.isCompleted ? "已完成" : "未完成") << ","
+                   << task.description << "\n";
+        }
+
+        file.close();
+        QMessageBox::information(this, "成功", "数据已导出到：" + fileName);
     } else {
-        QMessageBox::warning(this, "警告", "文件发送失败！");
-    }
-    ui->progressBar->setValue(0);
-    ui->pushButton_sendFile->setEnabled(true);
-}
-
-// 新客户端连接（接收文件）
-void MainWindow::newClientConnected()
-{
-    if (m_clientSocket) {
-        m_clientSocket->abort();
-        m_clientSocket->deleteLater();
-    }
-
-    m_clientSocket = m_tcpServer->nextPendingConnection();
-    connect(m_clientSocket, &QTcpSocket::readyRead, this, &MainWindow::readClientData);
-    connect(m_clientSocket, &QTcpSocket::disconnected, m_clientSocket, &QObject::deleteLater);
-
-    // 重置接收状态
-    m_receivedSize = 0;
-    m_fileSize = 0;
-    if (m_receiveFile) {
-        m_receiveFile->close();
-        delete m_receiveFile;
-        m_receiveFile = nullptr;
+        QMessageBox::warning(this, "错误", "无法创建文件：" + fileName);
     }
 }
 
-// 读取客户端数据（接收文件）
-void MainWindow::readClientData()
+// 导出为PDF
+void MainWindow::exportToPDF()
 {
-    QDataStream in(m_clientSocket);
-    // 适配Qt 6：使用默认编译版本（移除Qt_5_15硬编码）
-    in.setVersion(QDataStream::Qt_DefaultCompiledVersion);
+    QString fileName = QFileDialog::getSaveFileName(this, "导出PDF",
+                                                    QDir::homePath() + "/任务统计.pdf",
+                                                    "PDF文件 (*.pdf)");
+    if (fileName.isEmpty()) return;
 
-    // 第一步：读取文件头（文件大小+文件名）
-    if (m_fileSize == 0) {
-        if (m_clientSocket->bytesAvailable() < (qint64)(sizeof(qint64) + sizeof(QString))) {
-            return;
-        }
-        in >> m_fileSize >> m_selectedFilePath;
+    // 简单实现：先导出为文本文件
+    QFile file(fileName);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&file);
+// 简化编码设置
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        stream.setEncoding(QStringConverter::Utf8);
+#else
+        stream.setCodec("UTF-8");
+#endif
 
-        // 创建接收文件
-        QString savePath = QDir::homePath() + "/" + m_selectedFilePath;
-        m_receiveFile = new QFile(savePath);
-        if (!m_receiveFile->open(QIODevice::WriteOnly)) {
-            QMessageBox::warning(this, "警告", "无法创建接收文件：" + m_receiveFile->errorString());
-            m_clientSocket->abort();
-            return;
+        // 写入标题
+        stream << "任务统计报表\n";
+        stream << "生成时间：" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm") << "\n";
+        stream << "=================================\n\n";
+
+        // 写入任务数据
+        QList<Task> tasks = m_taskModel->getAllTasks();
+        for (const auto &task : tasks) {
+            stream << "ID: " << task.id << "\n";
+            stream << "标题: " << task.title << "\n";
+            stream << "截止时间: " << task.deadline.toString("yyyy-MM-dd HH:mm") << "\n";
+            stream << "优先级: " << (task.priority == 0 ? "低" : (task.priority == 1 ? "中" : "高")) << "\n";
+            stream << "完成状态: " << (task.isCompleted ? "已完成" : "未完成") << "\n";
+            if (!task.description.isEmpty()) {
+                stream << "描述: " << task.description << "\n";
+            }
+            stream << "---------------------------------\n";
         }
+
+        file.close();
+        QMessageBox::information(this, "成功", "数据已导出到：" + fileName);
+    } else {
+        QMessageBox::warning(this, "错误", "无法创建文件：" + fileName);
+    }
+}
+
+// 接收任务提醒（UI线程显示弹窗）
+void MainWindow::onTaskReminder(const Task &task)
+{
+    // 线程安全更新UI（队列连接）
+    QMetaObject::invokeMethod(this, [=]() {
+        QMessageBox::information(this, "任务提醒",
+                                 QString("任务即将到期！\n标题：%1\n截止时间：%2")
+                                     .arg(task.title)
+                                     .arg(task.deadline.toString("yyyy-MM-dd HH:mm")));
+    }, Qt::QueuedConnection);
+}
+
+// 任务数据变化（更新线程任务列表）
+void MainWindow::onTaskDataChanged()
+{
+    m_reminderThread->setTasks(m_taskModel->getAllTasks());
+}
+
+// 接收数据库错误
+void MainWindow::onDBError(const QString &errorMsg)
+{
+    QMessageBox::critical(this, "数据库错误", errorMsg);
+}
+
+// 加载任务（从数据库到Model）
+void MainWindow::loadTasksFromDB()
+{
+    QList<Task> tasks = m_dbManager->getAllTasks();
+
+    // 清空Model并重新添加任务
+    m_taskModel->clearTasks();  // 这会调用 beginResetModel() 和 endResetModel()
+    for (const auto &task : tasks) {
+        m_taskModel->addTask(task);
     }
 
-    // 第二步：读取文件内容
-    if (m_receivedSize < m_fileSize) {
-        QByteArray buffer = m_clientSocket->readAll();
-        qint64 writeSize = m_receiveFile->write(buffer);
-        m_receivedSize += writeSize;
+    // 更新提醒线程的任务列表
+    m_reminderThread->setTasks(tasks);
+}
 
-        ui->progressBar->setValue((int)((m_receivedSize * 100) / m_fileSize));
+// 获取选中的任务ID
+int MainWindow::getSelectedTaskId() const
+{
+    QModelIndexList selectedRows = ui->tableView_Tasks->selectionModel()->selectedRows();
+    if (selectedRows.isEmpty()) return -1;
 
-        // 接收完成
-        if (m_receivedSize == m_fileSize) {
-            m_receiveFile->close();
-            QMessageBox::information(this, "提示", "文件接收成功！\n保存路径：" + QDir::homePath() + "/" + m_selectedFilePath);
-            // 添加到共享列表
-            ui->listWidget_sharedFiles->addItem(m_selectedFilePath);
+    QModelIndex index = selectedRows.first();
+    QList<Task> tasks = m_taskModel->getAllTasks();
+    if (index.row() >= tasks.size()) return -1;
 
-            // 重置状态
-            m_fileSize = 0;
-            m_receivedSize = 0;
-            m_receiveFile->deleteLater();
-            m_receiveFile = nullptr;
-            ui->progressBar->setValue(0);
-        }
-    }
+    return tasks[index.row()].id;
+}
+
+// 清空输入表单
+void MainWindow::clearInputForm()
+{
+    ui->lineEdit_Title->clear();
+    ui->dateTimeEdit_Deadline->setDateTime(QDateTime::currentDateTime().addSecs(3600));
+    ui->comboBox_Priority->setCurrentIndex(1);
+    ui->textEdit_Description->clear();
+    ui->tableView_Tasks->clearSelection();
+}
+
+// 退出程序 - 菜单栏Action
+void MainWindow::on_actionExit_triggered()
+{
+    QApplication::quit();
+}
+
+// 显示关于信息 - 菜单栏Action
+void MainWindow::on_actionAbout_triggered()
+{
+    QMessageBox::about(this, "关于",
+                       "个人工作与任务管理系统 v1.0\n"
+                       "核心功能：\n"
+                       "- 任务分类管理\n"
+                       "- 优先级排序\n"
+                       "- 定时提醒\n"
+                       "- 完成情况统计\n"
+                       "- 数据库存储\n"
+                       "- 文件导出功能");
 }

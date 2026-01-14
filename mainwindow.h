@@ -1,45 +1,22 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-// 核心头文件（解决所有未定义错误）
 #include <QMainWindow>
-#include <QTcpServer>
-#include <QTcpSocket>
-#include <QUdpSocket>
-#include <QThread>
-#include <QFile>
-#include <QFileDialog>
-#include <QHostAddress>
-#include <QNetworkInterface>
+#include <QTableView>
+#include <QPushButton>
+#include <QLineEdit>
+#include <QDateTimeEdit>
+#include <QComboBox>
+#include <QTextEdit>
+#include <QLabel>
 #include <QMessageBox>
-#include <QDataStream>
-#include <QListWidgetItem>
-// 关键修改：替换 QRegExp 为 QRegularExpression
-#include <QRegularExpression>
-#include <QDir>
+#include "taskmodel.h"
+#include "reminderthread.h"
+#include "dbmanager.h"
 
 QT_BEGIN_NAMESPACE
-namespace Ui {
-class MainWindow;
-}
+namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
-
-// 文件传输线程类（避免UI阻塞）
-class FileTransferThread : public QThread
-{
-    Q_OBJECT
-public:
-    explicit FileTransferThread(QTcpSocket *socket, const QString &filePath, QObject *parent = nullptr);
-    void run() override;
-
-signals:
-    void progressChanged(int value);
-    void transferFinished(bool success);
-
-private:
-    QTcpSocket *m_socket;
-    QString m_filePath;
-};
 
 class MainWindow : public QMainWindow
 {
@@ -50,40 +27,40 @@ public:
     ~MainWindow();
 
 private slots:
-    // 设备发现相关
-    void discoverDevices();
-    void readUdpDatagram();
-    void on_listWidget_devices_itemClicked(QListWidgetItem *item);
+    // 按钮点击事件
+    void on_btnAddTask_clicked();    // 添加任务
+    void on_btnEditTask_clicked();   // 编辑任务
+    void on_btnDeleteTask_clicked(); // 删除任务
+    void on_btnRefresh_clicked();    // 刷新任务列表
+    void on_btnStats_clicked();      // 显示统计信息
+    void on_btnExport_clicked();     // 导出文件
 
-    // 文件操作相关
-    void on_pushButton_selectFile_clicked();
-    void on_pushButton_sendFile_clicked();
-    void updateProgress(int value);
-    void transferDone(bool success);
+    // 菜单栏事件
+    void on_actionExit_triggered();   // 退出程序（新增）
+    void on_actionAbout_triggered();  // 关于程序（新增）
 
-    // 服务器相关（接收文件）
-    void newClientConnected();
-    void readClientData();
+    // 其他槽函数
+    void onTaskReminder(const Task &task); // 接收任务提醒
+    void onTaskDataChanged();             // 任务数据变化（更新线程任务列表）
+    void onDBError(const QString &errorMsg); // 接收数据库错误
 
 private:
     Ui::MainWindow *ui;
+    TaskModel *m_taskModel;
+    ReminderThread *m_reminderThread;
+    DBManager *m_dbManager;
 
-    // 网络相关
-    QTcpServer *m_tcpServer;
-    QTcpSocket *m_clientSocket;
-    QUdpSocket *m_udpSocket;
-    QString m_selectedDeviceIp;
-    QString m_selectedFilePath;
-
-    // 文件传输相关
-    QFile *m_receiveFile;
-    qint64 m_fileSize;
-    qint64 m_receivedSize;
-    FileTransferThread *m_transferThread;
-
-    // 初始化函数
-    void initNetwork();
+    // 初始化UI控件
     void initUI();
+    // 加载任务（从数据库到Model）
+    void loadTasksFromDB();
+    // 获取选中的任务ID
+    int getSelectedTaskId() const;
+    // 清空输入表单
+    void clearInputForm();
+    // 导出功能
+    void exportToExcel();
+    void exportToPDF();
 };
 
 #endif // MAINWINDOW_H

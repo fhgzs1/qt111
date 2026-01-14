@@ -11,66 +11,159 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>局域网文件传输与共享系统</string>
+   <string>个人工作与任务管理系统</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
+    <!-- 任务列表区域 -->
     <item>
-     <widget class="QGroupBox" name="groupBox_device">
+     <widget class="QGroupBox" name="groupBox_Tasks">
       <property name="title">
-       <string>局域网设备</string>
+       <string>任务列表</string>
       </property>
       <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
-        <widget class="QListWidget" name="listWidget_devices"/>
-       </item>
-      </layout>
-     </widget>
-    </item>
-    <item>
-     <widget class="QGroupBox" name="groupBox_file">
-      <property name="title">
-       <string>文件操作</string>
-      </property>
-      <layout class="QHBoxLayout" name="horizontalLayout">
-       <item>
-        <widget class="QPushButton" name="pushButton_selectFile">
-         <property name="text">
-          <string>选择文件</string>
+        <widget class="QTableView" name="tableView_Tasks">
+         <property name="selectionBehavior">
+          <enum>QAbstractItemView::SelectRows</enum>
          </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="pushButton_sendFile">
-         <property name="text">
-          <string>发送文件</string>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::SingleSelection</enum>
          </property>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="label_selectedFile">
-         <property name="text">
-          <string>未选择文件</string>
+         <property name="showGrid">
+          <bool>true</bool>
          </property>
         </widget>
        </item>
       </layout>
      </widget>
     </item>
+
+    <!-- 任务操作按钮区域 -->
     <item>
-     <widget class="QProgressBar" name="progressBar"/>
+     <layout class="QHBoxLayout" name="horizontalLayout_Buttons">
+      <item>
+       <widget class="QPushButton" name="btnAddTask">
+        <property name="text">
+         <string>添加任务</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnEditTask">
+        <property name="text">
+         <string>编辑任务</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnDeleteTask">
+        <property name="text">
+         <string>删除任务</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnRefresh">
+        <property name="text">
+         <string>刷新列表</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnStats">
+        <property name="text">
+         <string>任务统计</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnExport">
+        <property name="text">
+         <string>导出文件</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </item>
+
+    <!-- 任务输入表单区域 -->
     <item>
-     <widget class="QGroupBox" name="groupBox_shared">
+     <widget class="QGroupBox" name="groupBox_Form">
       <property name="title">
-       <string>共享文件列表</string>
+       <string>任务编辑</string>
       </property>
-      <layout class="QVBoxLayout" name="verticalLayout_3">
-       <item>
-        <widget class="QListWidget" name="listWidget_sharedFiles"/>
+      <layout class="QFormLayout" name="formLayout">
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_Title">
+         <property name="text">
+          <string>任务标题：</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLineEdit" name="lineEdit_Title">
+         <property name="placeholderText">
+          <string>输入任务标题（必填）</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_Deadline">
+         <property name="text">
+          <string>截止时间：</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QDateTimeEdit" name="dateTimeEdit_Deadline">
+         <property name="calendarPopup">
+          <bool>true</bool>
+         </property>
+         <property name="dateTime">
+          <datetime>2024-01-01T00:00:00</datetime>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_Priority">
+         <property name="text">
+          <string>优先级：</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QComboBox" name="comboBox_Priority">
+         <item>
+          <property name="text">
+           <string>低</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>中</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>高</string>
+          </property>
+         </item>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_Description">
+         <property name="text">
+          <string>任务描述：</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QTextEdit" name="textEdit_Description">
+         <property name="placeholderText">
+          <string>输入任务详细描述（可选）</string>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>
@@ -86,8 +179,32 @@
      <height>26</height>
     </rect>
    </property>
+   <widget class="QMenu" name="menu">
+    <property name="title">
+     <string>文件</string>
+    </property>
+    <addaction name="actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menu_2">
+    <property name="title">
+     <string>帮助</string>
+    </property>
+    <addaction name="actionAbout"/>
+   </widget>
+   <addaction name="menu"/>
+   <addaction name="menu_2"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionExit">
+   <property name="text">
+    <string>退出</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="text">
+    <string>关于</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>
