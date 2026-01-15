@@ -1,10 +1,11 @@
 #ifndef REMINDERTHREAD_H
 #define REMINDERTHREAD_H
+
 #include <QThread>
 #include <QList>
 #include <QDateTime>
-#include "taskmodel.h"
 #include <QMutex>
+#include "task.h"  // 包含Task结构体
 
 class ReminderThread : public QThread
 {
@@ -13,21 +14,21 @@ public:
     explicit ReminderThread(QObject *parent = nullptr);
     ~ReminderThread() override;
 
-    void setTasks(const QList<Task> &tasks); // 设置待监控任务
-    void stopThread();                       // 停止线程
+    void setTasks(const QList<Task> &tasks);
+    void stopThread();
 
 signals:
-    void taskReminder(const Task &task);     // 任务到期提醒信号
+    void taskReminder(const Task &task);
 
 protected:
-    void run() override;                     // 线程核心逻辑
+    void run() override;
 
 private:
     QList<Task> m_tasks;
-    volatile bool m_isRunning; // 加volatile，确保多线程可见性
-    mutable QMutex m_mutex;                  // 线程安全锁
-    const int CHECK_INTERVAL = 1000;         // 任务检查间隔（1秒）
-    const int REMINDER_ADVANCE = 60;         // 提前提醒时间（60秒）
+    volatile bool m_isRunning;
+    mutable QMutex m_mutex;
+    const int CHECK_INTERVAL = 1000;
+    const int REMINDER_ADVANCE = 60;
 };
 
 #endif // REMINDERTHREAD_H

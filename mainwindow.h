@@ -1,8 +1,7 @@
-// mainwindow.h
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 #include <QMainWindow>
-#include <QItemSelection>  // 新增：添加QItemSelection头文件
+#include <QItemSelection>
 #include "taskmodel.h"
 #include "reminderthread.h"
 
@@ -32,7 +31,6 @@ private slots:
     // 其他槽函数
     void onTaskReminder(const Task &task); // 接收任务提醒
     void onTaskDataChanged();             // 任务数据变化（更新线程任务列表）
-    // 新增槽函数（已修复：添加QItemSelection头文件后可识别）
     void onSelectionChanged(const QItemSelection &selected, const QItemSelection &deselected);
     void onTableDoubleClicked(const QModelIndex &index);
 
@@ -40,9 +38,8 @@ private:
     Ui::MainWindow *ui;
     TaskModel *m_taskModel;
     ReminderThread *m_reminderThread;
-    int m_nextTaskId = 1;  // 任务ID计数器
     // 辅助方法
-    void loadTasks();                      // 加载任务（从内存）
+    void loadTasks();                      // 加载任务（从数据库）
     int getSelectedTaskId() const;         // 获取选中的任务ID
     void clearInputForm();                 // 清空输入表单
     void exportToExcel();                  // 导出为CSV

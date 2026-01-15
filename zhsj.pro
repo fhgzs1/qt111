@@ -1,5 +1,4 @@
-# zhsj.pro
-QT       += core gui widgets
+QT       += core gui widgets sql
 CONFIG += c++17
 TARGET = TaskManager
 TEMPLATE = app
@@ -8,12 +7,15 @@ TEMPLATE = app
 SOURCES += main.cpp \
            mainwindow.cpp \
            taskmodel.cpp \
-           reminderthread.cpp
+           reminderthread.cpp \
+           dbmanager.cpp
 
 # 头文件
 HEADERS  += mainwindow.h \
             taskmodel.h \
-            reminderthread.h
+            reminderthread.h \
+            dbmanager.h \
+            task.h  # 新增task.h
 
 # UI文件
 FORMS    += mainwindow.ui
@@ -30,3 +32,6 @@ OBJECTS_DIR = $$PWD/temp/.obj
 MOC_DIR = $$PWD/temp/.moc
 RCC_DIR = $$PWD/temp/.rcc
 UI_DIR = $$PWD/temp/.ui
+
+# 设置UTF-8编码
+win32: QMAKE_CXXFLAGS += /utf-8

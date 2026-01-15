@@ -1,6 +1,6 @@
 #include "reminderthread.h"
-#include <QThread>
 #include <QDebug>
+#include <QMutexLocker>
 
 ReminderThread::ReminderThread(QObject *parent)
     : QThread(parent)
@@ -10,54 +10,49 @@ ReminderThread::ReminderThread(QObject *parent)
 ReminderThread::~ReminderThread()
 {
     stopThread();
-    wait();
 }
 
 void ReminderThread::setTasks(const QList<Task> &tasks)
 {
-    // 线程安全更新任务列表
-    QMutexLocker locker(&m_mutex);
+    QMutexLocker locker(&m_mutex); // 加锁，避免和run方法并发访问
     m_tasks = tasks;
-    qDebug() << "提醒线程任务列表已更新，任务数量：" << m_tasks.size();
 }
 
 void ReminderThread::stopThread()
 {
     m_isRunning = false;
-    qDebug() << "提醒线程停止信号已发送";
+    if (isRunning()) {
+        wait(); // 等待线程退出
+    }
 }
 
 void ReminderThread::run()
 {
-    qDebug() << "提醒线程开始运行";
-
     while (m_isRunning) {
         QDateTime now = QDateTime::currentDateTime();
-        QList<Task> tasksCopy;
+        QList<Task> currentTasks;
 
-        // 先复制任务列表，减少锁持有时间
+        // 加锁读取当前任务列表（避免和setTasks并发修改）
         {
             QMutexLocker locker(&m_mutex);
-            tasksCopy = m_tasks;
+            currentTasks = m_tasks;
         }
 
-        // 遍历任务，检查是否需要提醒
-        for (const auto &task : tasksCopy) {
+        // 遍历任务检查是否需要提醒
+        for (const Task &task : currentTasks) {
             if (task.isCompleted) continue; // 已完成任务跳过
 
-            // 计算截止时间与当前时间的差值（秒）
-            qint64 secsToDeadline = now.secsTo(task.deadline);
-            // 到期前60秒内且未提醒过，发送提醒
-            if (secsToDeadline >= 0 && secsToDeadline <= REMINDER_ADVANCE) {
-                qDebug() << "发送任务提醒：" << task.title;
+            // 计算剩余时间（秒）
+            qint64 remaining = now.secsTo(task.deadline);
+            if (remaining >= 0 && remaining <= REMINDER_ADVANCE) {
+                // 发送提醒信号（注意：跨线程信号槽自动队列调度）
                 emit taskReminder(task);
-                // 避免重复提醒（短暂延迟后跳过该任务）
-                QThread::msleep(100);
+                // 避免重复提醒（标记为“已提醒”，但当前是内存版，可临时跳过）
+                msleep(REMINDER_ADVANCE * 1000); // 避免1分钟内重复提醒
             }
         }
 
-        QThread::msleep(CHECK_INTERVAL); // 每秒检查一次
+        msleep(CHECK_INTERVAL); // 每秒检查一次
     }
-
-    qDebug() << "提醒线程结束运行";
+    qDebug() << "提醒线程已退出";
 }

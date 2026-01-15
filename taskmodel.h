@@ -1,18 +1,9 @@
 #ifndef TASKMODEL_H
 #define TASKMODEL_H
-#include <QAbstractTableModel>
-#include <QDateTime>
-#include <QMutex>
 
-// 任务结构体（与数据库表字段对应）
-struct Task {
-    int id;                 // 唯一ID（自增）
-    QString title;          // 任务标题
-    QDateTime deadline;     // 截止时间
-    int priority;           // 优先级（0=低，1=中，2=高）
-    bool isCompleted;       // 是否完成
-    QString description;    // 任务描述
-};
+#include <QAbstractTableModel>
+#include "dbmanager.h"
+#include "task.h"  // 包含Task结构体
 
 class TaskModel : public QAbstractTableModel
 {
@@ -20,16 +11,16 @@ class TaskModel : public QAbstractTableModel
 public:
     // 表格列定义
     enum TaskColumn {
-        ColumnTitle,        // 任务标题
-        ColumnDeadline,     // 截止时间
-        ColumnPriority,     // 优先级
-        ColumnCompleted,    // 完成状态
-        ColumnCount         // 列数
+        ColumnTitle = 0,        // 任务标题
+        ColumnDeadline,         // 截止时间
+        ColumnPriority,         // 优先级
+        ColumnCompleted,        // 完成状态
+        ColumnCount             // 列数
     };
 
     explicit TaskModel(QObject *parent = nullptr);
 
-    // 重写Model核心方法（移除不必要的互斥锁）
+    // 重写Model核心方法
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     int columnCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
@@ -37,25 +28,22 @@ public:
     bool setData(const QModelIndex &index, const QVariant &value, int role = Qt::EditRole) override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
 
-    // 任务管理接口（仅修改数据时加锁）
-    void addTask(const Task &task);          // 添加任务
-    void updateTask(const Task &task);       // 更新任务
-    void removeTask(int taskId);             // 删除任务
-    void toggleTaskCompleted(int taskId);    // 切换任务完成状态
-    void clearTasks();                       // 清空所有任务
-    QList<Task> getAllTasks() const;         // 获取所有任务（返回副本，无需加锁）
-    Task getTaskById(int taskId) const;      // 按ID获取任务
+    // 任务管理接口（调用数据库）
+    void addTask(const Task &task);
+    void updateTask(const Task &task);
+    void removeTask(int taskId);
+    void toggleTaskCompleted(int taskId);
+    void refreshTasks();
+    QList<Task> getAllTasks() const;
+    Task getTaskById(int taskId) const;
 
 signals:
-    void taskDataChanged();  // 任务数据变化信号
+    void taskDataChanged();
 
 private:
-    QList<Task> m_tasks;     // 任务列表（内存缓存）
-    mutable QMutex m_mutex;  // 仅用于修改数据时的线程安全
-    // 优先级转文字（低/中/高）
-    QString priorityToString(int priority) const;
-    // 截止时间格式化（yyyy-MM-dd HH:mm）
-    QString formatDeadline(const QDateTime &deadline) const;
+    // 添加一个成员变量缓存任务列表，避免频繁查询数据库
+    mutable QList<Task> m_cachedTasks;
+    mutable QMutex m_cacheMutex;
 };
 
 #endif // TASKMODEL_H
