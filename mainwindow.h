@@ -1,5 +1,6 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
+
 #include <QMainWindow>
 #include <QItemSelection>
 #include "taskmodel.h"
@@ -38,13 +39,22 @@ private:
     Ui::MainWindow *ui;
     TaskModel *m_taskModel;
     ReminderThread *m_reminderThread;
-    // 辅助方法
-    void loadTasks();                      // 加载任务（从数据库）
-    int getSelectedTaskId() const;         // 获取选中的任务ID
-    void clearInputForm();                 // 清空输入表单
-    void exportToExcel();                  // 导出为CSV
-    void exportToText();                   // 导出为文本
-    void addSampleTasks();                 // 添加示例数据
+
+    // 新增方法
+    void initializeApplication();
+    void initializeUIWithoutDatabase();
+
+    // 原有方法
+    int getSelectedTaskId() const;
+    void clearInputForm();
+    void exportToExcel();
+    void exportToText();
+    void loadTasks() {}  // 空实现
+    void addSampleTasks() {}  // 空实现
+    void initApplication() {}  // 空实现
+    void initUIComponents(bool) {}  // 空实现
+    void initReminderThread() {}  // 空实现
+    void checkAndAddSampleTasks() {}  // 空实现
 };
 
 #endif // MAINWINDOW_H
